@@ -1,0 +1,85 @@
+name: .NET Continuous Integration
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - '**.md'
+  pull_request:
+    branches: [ "main", "develop" ]
+  workflow_dispatch: # Разрешает ручной запуск
+
+env:
+  DOTNET_VERSION: '9.0.x'
+  SOLUTION_PATH: 'MyAspNetCoreSolution.sln'
+  PROJECT_PATH: 'MyWebApi/MyWebApi.csproj'
+  TEST_PATH: 'MyWebApi.Tests/MyWebApi.Tests.csproj'
+
+jobs:
+  build-and-test:
+    name: Build and Test on Ubuntu
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Validate dotnet version
+      run: dotnet --version
+
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+
+    - name: Build solution
+      run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore --verbosity normal
+
+    - name: Run tests
+      run: dotnet test ${{ env.TEST_PATH }} --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
+
+    - name: Publish test results
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: **/*.trx
+
+    - name: Publish application
+      run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -o ./publish --no-build
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: published-app
+        path: ./publish/
+
+    - name: Verify published output
+      run: |
+        echo "Published files:"
+        ls -la ./publish/
+        echo "Size of published app:"
+        du -sh ./publish/
+
+  build-windows:
+    name: Build on Windows
+    runs-on: windows-latest
+    needs: build-and-test # Запускается только после успеха основной job
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Build solution (Windows)
+      run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --verbosity minimal
